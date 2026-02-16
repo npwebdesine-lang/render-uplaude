@@ -16,9 +16,9 @@ const mcpServer = new McpServer({
   version: "1.0.0",
 });
 
-// הגדרת הכלי
+// הגדרת הכלי - שים לב: אנחנו מדמים מזג אוויר כדי לוודא שזה עובד
 mcpServer.tool("get_weather", { city: z.string() }, async ({ city }) => {
-  console.log(`[MCP] Calculating weather for: ${city}`);
+  console.log(`[MCP Tool Executing] City: ${city}`);
   const conditions = ["Sunny ☀️", "Rainy 🌧️", "Cloudy ☁️"];
   const rnd = conditions[Math.floor(Math.random() * conditions.length)];
   const temp = Math.floor(Math.random() * 30) + 10;
@@ -27,20 +27,37 @@ mcpServer.tool("get_weather", { city: z.string() }, async ({ city }) => {
   };
 });
 
-// ניהול SSE - שיטה פשוטה ויציבה ל-Render
-let transport = null;
+// --- שינוי קריטי: משתנה גלובלי יחיד לטרנספורט ---
+// זה מבטיח שגם אם ה-SessionID מתבלבל בדרך, השרת ידע לענות.
+let globalTransport = null;
 
 app.get("/sse", async (req, res) => {
-  console.log("[MCP] New connection established");
-  transport = new SSEServerTransport("/messages", res);
-  await mcpServer.connect(transport);
+  console.log(">>> New SSE Connection");
+
+  // יצירת טרנספורט חדש
+  globalTransport = new SSEServerTransport("/messages", res);
+
+  // חיבור ל-MCP
+  await mcpServer.connect(globalTransport);
+
+  console.log(">>> SSE Connected and ready");
 });
 
 app.post("/messages", async (req, res) => {
-  if (transport) {
-    await transport.handlePostMessage(req, res);
-  } else {
-    res.status(503).send("No active transport");
+  console.log(">>> POST /messages received");
+
+  if (!globalTransport) {
+    console.error("!!! No active transport found");
+    return res.status(503).send("No active connection");
+  }
+
+  // אנחנו מתעלמים מה-SessionID בבקשה ומשתמשים בחיבור הפעיל האחרון
+  // זה "התיקון" לבעיות ב-Render
+  try {
+    await globalTransport.handlePostMessage(req, res);
+  } catch (err) {
+    console.error("Error handling POST:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
