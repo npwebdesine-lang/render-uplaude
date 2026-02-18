@@ -9,54 +9,47 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get("/healthz", (req, res) => res.status(200).send("ok"));
-
 const mcpServer = new McpServer({
-  name: "Weather Service",
+  name: "WeatherService",
   version: "1.0.0",
 });
 
-// הגדרת הכלי - שים לב: אנחנו מדמים מזג אוויר כדי לוודא שזה עובד
+// --- כאן השינוי: תשובה קבועה ---
 mcpServer.tool("get_weather", { city: z.string() }, async ({ city }) => {
-  console.log(`[MCP Tool Executing] City: ${city}`);
-  const conditions = ["Sunny ☀️", "Rainy 🌧️", "Cloudy ☁️"];
-  const rnd = conditions[Math.floor(Math.random() * conditions.length)];
-  const temp = Math.floor(Math.random() * 30) + 10;
+  console.log(
+    `>>> [MCP] Request received for: ${city}. Returning FIXED sunny response.`,
+  );
+
+  // לא משנה מה העיר - תמיד שמשי!
   return {
-    content: [{ type: "text", text: `Weather in ${city}: ${rnd}, ${temp}°C` }],
+    content: [
+      {
+        type: "text",
+        // הוספתי "(בדיקת חיבור)" כדי שתהיה בטוח שזה הגיע מכאן
+        text: `מזג האוויר ב${city}: שמשי לחלוטין ☀️, 25 מעלות (בדיקת חיבור תקינה ✅)`,
+      },
+    ],
   };
 });
 
-// --- שינוי קריטי: משתנה גלובלי יחיד לטרנספורט ---
-// זה מבטיח שגם אם ה-SessionID מתבלבל בדרך, השרת ידע לענות.
+// ניהול חיבורים יציב (כמו בתיקון הקודם)
 let globalTransport = null;
 
 app.get("/sse", async (req, res) => {
-  console.log(">>> New SSE Connection");
-
-  // יצירת טרנספורט חדש
+  console.log(">>> [SSE] Client connected");
   globalTransport = new SSEServerTransport("/messages", res);
-
-  // חיבור ל-MCP
   await mcpServer.connect(globalTransport);
-
-  console.log(">>> SSE Connected and ready");
 });
 
 app.post("/messages", async (req, res) => {
-  console.log(">>> POST /messages received");
-
   if (!globalTransport) {
-    console.error("!!! No active transport found");
-    return res.status(503).send("No active connection");
+    console.log("!!! [POST] No active transport");
+    return res.status(503).send("Client not connected yet");
   }
-
-  // אנחנו מתעלמים מה-SessionID בבקשה ומשתמשים בחיבור הפעיל האחרון
-  // זה "התיקון" לבעיות ב-Render
   try {
     await globalTransport.handlePostMessage(req, res);
   } catch (err) {
-    console.error("Error handling POST:", err);
+    console.error("!!! [POST] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
